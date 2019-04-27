@@ -25,7 +25,7 @@
 ### Training
 
 ```sh
-python train.py --model_name bert_spc --dataset restaurant --logdir bert_spc_logs
+python train.py --model_name bert_spc --dataset restaurant --learning_rate 2e-5 --logdir bert_spc_logs
 ```
 
 See [train.py](./train.py) for more detail.

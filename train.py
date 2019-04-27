@@ -18,6 +18,9 @@ from models import LSTM, IAN, MemNet, RAM, TD_LSTM, Cabasc, ATAE_LSTM, TNet_LF, 
 from models.aen import CrossEntropyLoss_LSR, AEN, AEN_BERT
 from models.bert_spc import BERT_SPC
 
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # specify which GPU(s) to be used
+
 
 class Instructor:
     def __init__(self, opt):
@@ -29,7 +32,7 @@ class Instructor:
             # freeze pretrained bert params
             # for param in bert.parameters():
             #     param.requires_grad = False
-            self.model = opt.model_class(bert, opt).to(opt.device)
+            self.model = opt.model_class(bert, opt)
         else:
             tokenizer = build_tokenizer(
                 fnames=[opt.dataset_file['train'], opt.dataset_file['test']],
@@ -47,7 +50,10 @@ class Instructor:
         self.test_data_loader = DataLoader(dataset=testset, batch_size=opt.batch_size, shuffle=False)
 
         if opt.device.type == 'cuda':
+            self.model = nn.DataParallel(self.model).cuda()
             print("cuda memory allocated:", torch.cuda.memory_allocated(device=opt.device.index))
+        else:
+            self.model = self.model.to(opt.device)
         self._print_args()
 
     def _print_args(self):
@@ -129,8 +135,8 @@ class Instructor:
         t_targets_all, t_outputs_all = None, None
         with torch.no_grad():
             for t_batch, t_sample_batched in enumerate(self.test_data_loader):
-                t_inputs = [t_sample_batched[col].to(opt.device) for col in self.opt.inputs_cols]
-                t_targets = t_sample_batched['polarity'].to(opt.device)
+                t_inputs = [t_sample_batched[col].to(self.opt.device) for col in self.opt.inputs_cols]
+                t_targets = t_sample_batched['polarity'].to(self.opt.device)
                 t_outputs = self.model(t_inputs)
 
                 n_test_correct += (torch.argmax(t_outputs, -1) == t_targets).sum().item()
@@ -158,14 +164,14 @@ class Instructor:
         print('max_test_acc: {0}     max_f1: {1}'.format(max_test_acc, max_f1))
 
 
-if __name__ == '__main__':
+def main():
     # Hyper Parameters
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_name', default='lstm', type=str)
     parser.add_argument('--dataset', default='twitter', type=str, help='twitter, restaurant, laptop')
     parser.add_argument('--optimizer', default='adam', type=str)
     parser.add_argument('--initializer', default='xavier_uniform_', type=str)
-    parser.add_argument('--learning_rate', default=2e-5, type=float)  # try 5e-5, 3e-5, 2e-5 for BERT models (sensitive)
+    parser.add_argument('--learning_rate', default=0.001, type=float)  # try 5e-5, 3e-5, 2e-5 for BERT models (sensitive)
     parser.add_argument('--dropout', default=0.1, type=float)
     parser.add_argument('--l2reg', default=0.01, type=float)
     parser.add_argument('--num_epoch', default=20, type=int)
@@ -224,7 +230,7 @@ if __name__ == '__main__':
         'mgan': ['text_raw_indices', 'aspect_indices', 'text_left_indices'],
         'bert_spc': ['text_bert_indices', 'bert_segments_ids'],
         'aen': ['text_raw_indices', 'aspect_indices'],
-        'aen_bert' : ['text_raw_bert_indices', 'aspect_bert_indices'],
+        'aen_bert': ['text_raw_bert_indices', 'aspect_bert_indices'],
     }
     initializers = {
         'xavier_uniform_': torch.nn.init.xavier_uniform_,
@@ -250,3 +256,7 @@ if __name__ == '__main__':
 
     ins = Instructor(opt)
     ins.run()
+
+
+if __name__ == '__main__':
+    main()
